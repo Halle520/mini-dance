@@ -9,6 +9,8 @@ type Props = {
   user: UserGrid | null;
   currentBeat: number;
   position: number;
+  canEdit?: boolean;
+  highlight?: boolean;
 };
 
 function getCellAtBeat(grid: boolean[][], beat: number): boolean {
@@ -18,16 +20,17 @@ function getCellAtBeat(grid: boolean[][], beat: number): boolean {
   return !!g?.[row]?.[col];
 }
 
-export function FormationSlot({ user, currentBeat, position }: Props) {
+export function FormationSlot({ user, currentBeat, position, canEdit = true, highlight }: Props) {
   const isOn = user ? getCellAtBeat(user.grid, currentBeat) : false;
   const row = Math.floor(currentBeat / GRID_SIZE);
   const note = user?.row_notes?.[row];
 
-  const className = `flex flex-col items-center justify-center rounded-xl border-2 border-dashed transition ${
-    user
-      ? "border-zinc-200 bg-white py-6 shadow hover:border-red-300 hover:shadow-md"
-      : "border-zinc-100 bg-zinc-50 py-6"
-  }`;
+  const base = "flex flex-col items-center justify-center rounded-xl border-2 py-6 shadow transition";
+  const className = highlight
+    ? `${base} border-red-500 bg-red-50 hover:border-red-600 hover:bg-red-100`
+    : user
+      ? `${base} border-dashed border-zinc-200 bg-white hover:border-red-300 hover:shadow-md`
+      : `${base} border-dashed border-zinc-100 bg-zinc-50`;
 
   const content = (
     <>
@@ -46,11 +49,13 @@ export function FormationSlot({ user, currentBeat, position }: Props) {
     </>
   );
 
-  return user ? (
-    <Link href={`/grid/${encodeURIComponent(user.user_name)}`} className={className}>
-      {content}
-    </Link>
-  ) : (
-    <div className={className}>{content}</div>
-  );
+  if (!user) return <div className={className}>{content}</div>;
+  if (canEdit) {
+    return (
+      <Link href={`/grid/${encodeURIComponent(user.user_name)}`} className={className}>
+        {content}
+      </Link>
+    );
+  }
+  return <div className={className}>{content}</div>;
 }

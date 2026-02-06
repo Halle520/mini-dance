@@ -1,43 +1,45 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import { GridEditor } from "@/components/GridEditor";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { FormationSlot } from "@/components/FormationSlot";
 import { GRID_SIZE } from "@/lib/constants";
+import { useRouter } from "next/navigation";
 
-type GridState = boolean[][];
+const BEATS_TOTAL = GRID_SIZE * GRID_SIZE;
 
-function createEmptyGrid(): GridState {
-  return Array(GRID_SIZE)
-    .fill(null)
-    .map(() => Array(GRID_SIZE).fill(false));
-}
+type UserGrid = { user_name: string; grid: boolean[][]; row_notes: string[] };
+type OverviewData = {
+  cols: number;
+  rows: number;
+  slots: (string | null)[];
+  users: Record<string, { grid: boolean[][]; row_notes: string[] }>;
+};
 
 export default function GridPage() {
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [grid, setGrid] = useState<GridState>(createEmptyGrid);
-  const [rowNotes, setRowNotes] = useState<string[]>(() => Array(GRID_SIZE).fill(""));
+  const [currentUser, setCurrentUser] = useState<string | null>(null);
+  const [overview, setOverview] = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isExporting, setIsExporting] = useState(false);
-  const [saveTimeout, setSaveTimeout] = useState<ReturnType<typeof setTimeout> | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [currentBeat, setCurrentBeat] = useState(0);
+  const [bpm, setBpm] = useState(90);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const save = useCallback(
-    (g: GridState, notes: string[]) => {
-      if (!name) return;
-      fetch(`/api/grids/${encodeURIComponent(name)}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ grid: g, row_notes: notes }),
-      });
-    },
-    [name]
-  );
+  const advanceBeat = useCallback(() => {
+    setCurrentBeat((b) => {
+      const next = b + 1;
+      if (next >= BEATS_TOTAL) {
+        setPlaying(false);
+        return BEATS_TOTAL - 1;
+      }
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     Promise.all([
       fetch("/api/auth").then((r) => r.json()),
-      fetch("/api/grids/me").then((r) => (r.ok ? r.json() : null)),
+      fetch("/api/formation/overview").then((r) => (r.ok ? r.json() : null)),
     ])
       .then(([auth, data]) => {
         const user = auth?.name;
@@ -45,12 +47,17 @@ export default function GridPage() {
           router.replace("/");
           return;
         }
-        setName(user);
-        if (data?.grid) setGrid(Array.isArray(data.grid) ? data.grid : createEmptyGrid());
-        if (Array.isArray(data?.row_notes)) {
-          const notes = [...data.row_notes];
-          while (notes.length < GRID_SIZE) notes.push("");
-          setRowNotes(notes.slice(0, GRID_SIZE));
+        setCurrentUser(user);
+        if (
+          data &&
+          typeof data === "object" &&
+          "cols" in data &&
+          "rows" in data &&
+          "slots" in data
+        ) {
+          setOverview(data as OverviewData);
+        } else {
+          setOverview({ cols: 10, rows: 3, slots: [], users: {} });
         }
       })
       .catch(() => router.replace("/"))
@@ -58,130 +65,122 @@ export default function GridPage() {
   }, [router]);
 
   useEffect(() => {
-    if (!name) return;
-    if (saveTimeout) clearTimeout(saveTimeout);
-    const id = setTimeout(() => save(grid, rowNotes), 500);
-    setSaveTimeout(id);
-    return () => clearTimeout(id);
-  }, [grid, rowNotes, name, save]);
-
-  const handleToggle = (row: number, col: number) => {
-    setGrid((prev) => {
-      const next = prev.map((r) => [...r]);
-      next[row][col] = !next[row][col];
-      return next;
-    });
-  };
-
-  const handleNoteChange = (row: number, value: string) => {
-    setRowNotes((prev) => {
-      const next = [...prev];
-      next[row] = value;
-      return next;
-    });
-  };
-
-  const handleExport = () => {
-    if (isExporting || !name) return;
-    setIsExporting(true);
-    try {
-      const scale = 2;
-      const cellSize = 40;
-      const pad = 24;
-      const labelSize = 28;
-      const noteWidth = 140;
-      const w = labelSize + GRID_SIZE * cellSize + noteWidth + pad * 2;
-      const h = 60 + labelSize + GRID_SIZE * cellSize + pad * 2;
-      const canvas = document.createElement("canvas");
-      canvas.width = w * scale;
-      canvas.height = h * scale;
-      const ctx = canvas.getContext("2d")!;
-      ctx.scale(scale, scale);
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = "#27272a";
-      ctx.font = "bold 18px system-ui, sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText(`${name}'s Dance Grid`, w / 2, 42);
-      ctx.font = "bold 14px system-ui, sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      const ox = pad + labelSize;
-      const oy = 60 + pad + labelSize;
-      for (let i = 0; i < GRID_SIZE; i++) {
-        ctx.fillStyle = "#71717a";
-        ctx.fillText(String(i + 1), ox - labelSize / 2, oy + i * cellSize + cellSize / 2);
-        ctx.fillText(String(i + 1), ox + i * cellSize + cellSize / 2, oy - labelSize / 2);
-      }
-      for (let row = 0; row < GRID_SIZE; row++) {
-        for (let col = 0; col < GRID_SIZE; col++) {
-          const x = ox + col * cellSize;
-          const y = oy + row * cellSize;
-          ctx.fillStyle = "#fafafa";
-          ctx.strokeStyle = "#e4e4e7";
-          ctx.lineWidth = 1;
-          ctx.fillRect(x, y, cellSize, cellSize);
-          ctx.strokeRect(x, y, cellSize, cellSize);
-          const cx = x + cellSize / 2;
-          const cy = y + cellSize / 2;
-          const r = cellSize * 0.35;
-          if (grid[row][col]) {
-            ctx.fillStyle = "#b91c1c";
-            ctx.beginPath();
-            ctx.arc(cx, cy, r, 0, Math.PI * 2);
-            ctx.fill();
-          } else {
-            ctx.strokeStyle = "#d4d4d8";
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.arc(cx, cy, r, 0, Math.PI * 2);
-            ctx.stroke();
-          }
-        }
-      }
-      ctx.fillStyle = "#71717a";
-      ctx.font = "12px system-ui, sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText("Note", ox + GRID_SIZE * cellSize + noteWidth / 2, oy - labelSize / 2);
-      ctx.textAlign = "left";
-      ctx.fillStyle = "#27272a";
-      ctx.font = "11px system-ui, sans-serif";
-      for (let row = 0; row < GRID_SIZE; row++) {
-        const text = (rowNotes[row] || "").trim();
-        if (text) {
-          const y = oy + row * cellSize + cellSize / 2;
-          ctx.fillText(text.length > 25 ? text.slice(0, 25) + "…" : text, ox + GRID_SIZE * cellSize + 8, y, noteWidth - 16);
-        }
-      }
-      const link = document.createElement("a");
-      link.download = `${name.replace(/\s+/g, "-")}-dance-grid.png`;
-      link.href = canvas.toDataURL("image/png");
-      link.click();
-    } catch (err) {
-      console.error(err);
-      alert("Export failed");
-    } finally {
-      setIsExporting(false);
-    }
-  };
+    if (!playing) return;
+    const ms = 60000 / bpm / 4;
+    intervalRef.current = setInterval(advanceBeat, ms);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [playing, bpm, advanceBeat]);
 
   const handleLogout = () => {
-    fetch("/api/auth/logout", { method: "POST" }).then(() => (window.location.href = "/"));
+    fetch("/api/auth/logout", { method: "POST" }).then(
+      () => (window.location.href = "/"),
+    );
   };
 
-  if (loading) return <div className="flex min-h-screen items-center justify-center bg-zinc-100">Loading…</div>;
-  if (!name) return null;
+  if (loading)
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-zinc-100">
+        Loading…
+      </div>
+    );
+  if (!currentUser) return null;
+  const { cols, slots, users } = overview ?? {
+    cols: 10,
+    rows: 3,
+    slots: [],
+    users: {},
+  };
+  const norm = (x: string | null) => (x ?? "").trim().toLowerCase();
+  const isMe = (name: string | null) => norm(name) === norm(currentUser);
+  const mySlotIdx = slots.findIndex((s) => isMe(s));
 
   return (
-    <GridEditor
-      name={name}
-      grid={grid}
-      rowNotes={rowNotes}
-      onToggle={handleToggle}
-      onNoteChange={handleNoteChange}
-      onExport={handleExport}
-      onLogout={handleLogout}
-      isExporting={isExporting}
-    />
+    <div className="min-h-screen bg-zinc-100 p-6">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+          <h1 className="text-xl font-semibold text-zinc-800">
+            Formation overview
+          </h1>
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  if (!playing && currentBeat >= BEATS_TOTAL - 1)
+                    setCurrentBeat(0);
+                  setPlaying((p) => !p);
+                }}
+                className="rounded-md bg-red-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-800"
+              >
+                {playing ? "Pause" : "Play"}
+              </button>
+              <button
+                onClick={() => {
+                  setPlaying(false);
+                  setCurrentBeat(0);
+                }}
+                className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50"
+              >
+                Reset
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-zinc-600">BPM</label>
+              <input
+                type="range"
+                min={60}
+                max={140}
+                value={bpm}
+                onChange={(e) => setBpm(Number(e.target.value))}
+                className="w-24"
+              />
+              <span className="text-sm font-medium text-zinc-700">{bpm}</span>
+            </div>
+            <div className="text-sm font-medium text-zinc-600">
+              Beat {currentBeat + 1}/{BEATS_TOTAL}
+            </div>
+            <button
+              onClick={handleLogout}
+              className="rounded-md px-3 py-1.5 text-sm text-zinc-500 hover:bg-zinc-200 hover:text-zinc-800"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+        <p className="mb-4 text-sm text-zinc-600">
+          Click your position to edit your beat grid. Play to preview the
+          formation.
+        </p>
+        <div
+          className="grid gap-3"
+          style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}
+        >
+          {slots.map((userName, idx) => {
+            const userKey = userName ? Object.keys(users).find((k) => norm(k) === norm(userName)) ?? userName : null;
+            const ud = userKey ? users[userKey] : null;
+            const user: UserGrid | null =
+              ud && userName
+                ? { user_name: userName, grid: ud.grid, row_notes: ud.row_notes }
+                : null;
+            return (
+              <FormationSlot
+                key={idx}
+                user={user}
+                currentBeat={currentBeat}
+                position={idx + 1}
+                canEdit={isMe(userName)}
+                highlight={isMe(userName)}
+              />
+            );
+          })}
+        </div>
+        {mySlotIdx < 0 && (
+          <p className="mt-6 rounded-xl bg-amber-50 p-4 text-sm text-amber-800">
+            You&apos;re not in the formation. Contact the admin to be added.
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
