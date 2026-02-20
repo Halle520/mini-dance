@@ -22,7 +22,7 @@ export default function GridPage() {
   const [loading, setLoading] = useState(true);
   const [playing, setPlaying] = useState(false);
   const [currentBeat, setCurrentBeat] = useState(0);
-  const [bpm, setBpm] = useState(90);
+  const [bpm, setBpm] = useState(30);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const advanceBeat = useCallback(() => {
@@ -125,21 +125,7 @@ export default function GridPage() {
                 Reset
               </button>
             </div>
-            <div className="flex items-center gap-2">
-              <label className="text-sm text-zinc-600">BPM</label>
-              <input
-                type="range"
-                min={60}
-                max={140}
-                value={bpm}
-                onChange={(e) => setBpm(Number(e.target.value))}
-                className="w-24"
-              />
-              <span className="text-sm font-medium text-zinc-700">{bpm}</span>
-            </div>
-            <div className="text-sm font-medium text-zinc-600">
-              Beat {currentBeat + 1}/{BEATS_TOTAL}
-            </div>
+
             <button
               onClick={handleLogout}
               className="rounded-md px-3 py-1.5 text-sm text-zinc-500 hover:bg-zinc-200 hover:text-zinc-800"
@@ -152,16 +138,51 @@ export default function GridPage() {
           Click your position to edit your beat grid. Play to preview the
           formation.
         </p>
+        <div className="mb-4 rounded-xl bg-white p-4 shadow">
+          <span className="mb-3 block text-center text-6xl font-bold tabular-nums text-zinc-800">
+            Nhịp {currentBeat + 1} / {BEATS_TOTAL}
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={BEATS_TOTAL - 1}
+            value={currentBeat}
+            onChange={(e) => {
+              setPlaying(false);
+              setCurrentBeat(Number(e.target.value));
+            }}
+            className="w-full"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-zinc-600">BPM</label>
+          <input
+            type="range"
+            min={10}
+            max={60}
+            value={bpm}
+            onChange={(e) => setBpm(Number(e.target.value))}
+            className="w-24"
+          />
+          <span className="text-sm font-medium text-zinc-700">{bpm}</span>
+        </div>
         <div
           className="grid gap-3"
           style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}
         >
           {slots.map((userName, idx) => {
-            const userKey = userName ? Object.keys(users).find((k) => norm(k) === norm(userName)) ?? userName : null;
+            const userKey = userName
+              ? (Object.keys(users).find((k) => norm(k) === norm(userName)) ??
+                userName)
+              : null;
             const ud = userKey ? users[userKey] : null;
             const user: UserGrid | null =
               ud && userName
-                ? { user_name: userName, grid: ud.grid, row_notes: ud.row_notes }
+                ? {
+                    user_name: userName,
+                    grid: ud.grid,
+                    row_notes: ud.row_notes,
+                  }
                 : null;
             return (
               <FormationSlot
