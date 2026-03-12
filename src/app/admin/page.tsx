@@ -32,7 +32,7 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
   const [currentBeat, setCurrentBeat] = useState(0);
-  const [bpm, setBpm] = useState(90);
+  const [bpm, setBpm] = useState(60);
   const [editFormation, setEditFormation] = useState(false);
   const [newUserName, setNewUserName] = useState("");
   const [manageUsers, setManageUsers] = useState(false);
@@ -65,12 +65,23 @@ export default function AdminPage() {
       })
       .then(([gridData, data]) => {
         setUsers(gridData);
-        const d = data && typeof data === "object" && "cols" in data && "rows" in data && "slots" in data
-          ? (data as { cols: number; rows: number; slots: (string | null)[] })
-          : { cols: FORMATION_COLS, rows: FORMATION_ROWS, slots: defaultSlots(FORMATION_COLS, FORMATION_ROWS) };
+        const d =
+          data &&
+          typeof data === "object" &&
+          "cols" in data &&
+          "rows" in data &&
+          "slots" in data
+            ? (data as { cols: number; rows: number; slots: (string | null)[] })
+            : {
+                cols: FORMATION_COLS,
+                rows: FORMATION_ROWS,
+                slots: defaultSlots(FORMATION_COLS, FORMATION_ROWS),
+              };
         setFormationCols(Math.max(MIN_COLS, Math.min(MAX_COLS, d.cols)));
         setFormationRows(Math.max(MIN_ROWS, Math.min(MAX_ROWS, d.rows)));
-        setFormation(Array.isArray(d.slots) ? d.slots : defaultSlots(d.cols, d.rows));
+        setFormation(
+          Array.isArray(d.slots) ? d.slots : defaultSlots(d.cols, d.rows),
+        );
       })
       .catch((e) => setError(e.message));
   }, []);
@@ -93,7 +104,11 @@ export default function AdminPage() {
 
   const formationSize = formationCols * formationRows;
 
-  const saveFormation = (slots: (string | null)[], cols = formationCols, rows = formationRows) => {
+  const saveFormation = (
+    slots: (string | null)[],
+    cols = formationCols,
+    rows = formationRows,
+  ) => {
     const size = cols * rows;
     const normalized = Array.from({ length: size }, (_, i) =>
       typeof slots[i] === "string" && slots[i] ? slots[i] : null,
@@ -256,13 +271,13 @@ export default function AdminPage() {
               onClick={() => setEditFormation((e) => !e)}
               className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50"
             >
-              {editFormation ? "Done" : "Arrange"}
+              {editFormation ? "Xong" : "Sắp xếp vị trí thành viên"}
             </button>
             <button
               onClick={() => setManageUsers((m) => !m)}
               className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50"
             >
-              {manageUsers ? "Done" : "Manage users"}
+              {manageUsers ? "Xong" : "Quản lý thành viên"}
             </button>
             <button
               onClick={handleLogout}
@@ -322,7 +337,8 @@ export default function AdminPage() {
         {editFormation && (
           <div className="mb-6 rounded-xl bg-white p-4 shadow">
             <h2 className="mb-3 text-sm font-semibold text-zinc-700">
-              Arrange formation ({formationCols}×{formationRows} grid) – drag users into positions
+              Arrange formation ({formationCols}×{formationRows} grid) – drag
+              users into positions
             </h2>
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <span className="text-xs text-zinc-500">Rows:</span>
@@ -367,66 +383,69 @@ export default function AdminPage() {
                   gridTemplateColumns: `repeat(${formationCols}, minmax(80px, 1fr))`,
                 }}
               >
-                {Array.from({ length: formationCols * formationRows }, (_, idx) => (
-                  <div
-                    key={idx}
-                    className="min-h-[44px] rounded-lg border-2 border-dashed border-zinc-200 bg-zinc-50/50 p-2 transition hover:border-red-300 hover:bg-red-50/30"
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      e.currentTarget.classList.add(
-                        "border-red-400",
-                        "bg-red-50/50",
-                      );
-                    }}
-                    onDragLeave={(e) => {
-                      e.currentTarget.classList.remove(
-                        "border-red-400",
-                        "bg-red-50/50",
-                      );
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      e.currentTarget.classList.remove(
-                        "border-red-400",
-                        "bg-red-50/50",
-                      );
-                      const name = e.dataTransfer.getData("user");
-                      const fromSlotRaw = e.dataTransfer.getData("slot");
-                      if (!name) return;
-                      const fromSlot =
-                        fromSlotRaw !== "" ? parseInt(fromSlotRaw, 10) : -1;
-                      if (fromSlot >= 0) swapSlots(fromSlot, idx);
-                      else setSlot(idx, name);
-                    }}
-                  >
-                    {formation[idx] ? (
-                      <div
-                        draggable
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData("user", formation[idx]!);
-                          e.dataTransfer.setData("slot", String(idx));
-                          e.dataTransfer.effectAllowed = "move";
-                        }}
-                        className="flex cursor-grab items-center justify-between rounded border border-zinc-200 bg-white px-2 py-1 text-sm font-medium text-zinc-800 active:cursor-grabbing"
-                      >
-                        <span className="truncate">{formation[idx]}</span>
-                        <button
-                          type="button"
-                          onClick={(ev) => {
-                            ev.stopPropagation();
-                            setSlot(idx, null);
+                {Array.from(
+                  { length: formationCols * formationRows },
+                  (_, idx) => (
+                    <div
+                      key={idx}
+                      className="min-h-[44px] rounded-lg border-2 border-dashed border-zinc-200 bg-zinc-50/50 p-2 transition hover:border-red-300 hover:bg-red-50/30"
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.currentTarget.classList.add(
+                          "border-red-400",
+                          "bg-red-50/50",
+                        );
+                      }}
+                      onDragLeave={(e) => {
+                        e.currentTarget.classList.remove(
+                          "border-red-400",
+                          "bg-red-50/50",
+                        );
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.currentTarget.classList.remove(
+                          "border-red-400",
+                          "bg-red-50/50",
+                        );
+                        const name = e.dataTransfer.getData("user");
+                        const fromSlotRaw = e.dataTransfer.getData("slot");
+                        if (!name) return;
+                        const fromSlot =
+                          fromSlotRaw !== "" ? parseInt(fromSlotRaw, 10) : -1;
+                        if (fromSlot >= 0) swapSlots(fromSlot, idx);
+                        else setSlot(idx, name);
+                      }}
+                    >
+                      {formation[idx] ? (
+                        <div
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData("user", formation[idx]!);
+                            e.dataTransfer.setData("slot", String(idx));
+                            e.dataTransfer.effectAllowed = "move";
                           }}
-                          className="ml-1 text-zinc-400 hover:text-red-600"
-                          title="Remove"
+                          className="flex cursor-grab items-center justify-between rounded border border-zinc-200 bg-white px-2 py-1 text-sm font-medium text-zinc-800 active:cursor-grabbing"
                         >
-                          ×
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-zinc-400">{idx + 1}</span>
-                    )}
-                  </div>
-                ))}
+                          <span className="truncate">{formation[idx]}</span>
+                          <button
+                            type="button"
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              setSlot(idx, null);
+                            }}
+                            className="ml-1 text-zinc-400 hover:text-red-600"
+                            title="Remove"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-zinc-400">{idx + 1}</span>
+                      )}
+                    </div>
+                  ),
+                )}
               </div>
               <div className="min-w-[140px]">
                 <p className="mb-2 text-xs font-medium text-zinc-500">

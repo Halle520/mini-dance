@@ -33,7 +33,9 @@ export default function Home() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-100 p-6">
       <div className="w-full max-w-sm rounded-xl bg-white p-8 shadow-lg">
-        <h1 className="mb-6 text-xl font-semibold text-zinc-800">Dance Beat Grid</h1>
+        <h1 className="mb-6 text-xl font-semibold text-zinc-800">
+          Enter your name
+        </h1>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <input
             type="text"

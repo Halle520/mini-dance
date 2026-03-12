@@ -187,8 +187,8 @@ export default function GridNamePage() {
       onExport={handleExport}
       onLogout={handleLogout}
       isExporting={isExporting}
-      backHref={isAdmin ? "/admin" : undefined}
-      backLabel={isAdmin ? "← All users" : undefined}
+      backHref={isAdmin ? "/admin" : "/grid"}
+      backLabel={isAdmin ? "← All users" : "← Formation"}
     />
   );
 }
