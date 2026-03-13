@@ -32,7 +32,7 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
   const [currentBeat, setCurrentBeat] = useState(0);
-  const [bpm, setBpm] = useState(60);
+  const [bpm, setBpm] = useState(30);
   const [editFormation, setEditFormation] = useState(false);
   const [newUserName, setNewUserName] = useState("");
   const [manageUsers, setManageUsers] = useState(false);
@@ -256,16 +256,13 @@ export default function AdminPage() {
               <label className="text-sm text-zinc-600">BPM</label>
               <input
                 type="range"
-                min={60}
-                max={140}
+                min={10}
+                max={60}
                 value={bpm}
                 onChange={(e) => setBpm(Number(e.target.value))}
                 className="w-24"
               />
               <span className="text-sm font-medium text-zinc-700">{bpm}</span>
-            </div>
-            <div className="text-sm font-medium text-zinc-600">
-              Beat {currentBeat + 1}/{BEATS_TOTAL}
             </div>
             <button
               onClick={() => setEditFormation((e) => !e)}
@@ -376,6 +373,7 @@ export default function AdminPage() {
                 − Col
               </button>
             </div>
+
             <div className="flex flex-wrap gap-6">
               <div
                 className="grid gap-1.5"
@@ -476,7 +474,22 @@ export default function AdminPage() {
             </div>
           </div>
         )}
-
+        <div className="mb-4 rounded-xl bg-white p-4 shadow">
+          <span className="mb-3 block text-center text-6xl font-bold tabular-nums text-zinc-800">
+            Nhịp {currentBeat + 1} / {BEATS_TOTAL}
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={BEATS_TOTAL - 1}
+            value={currentBeat}
+            onChange={(e) => {
+              setPlaying(false);
+              setCurrentBeat(Number(e.target.value));
+            }}
+            className="w-full"
+          />
+        </div>
         <div
           className="grid gap-3"
           style={{ gridTemplateColumns: `repeat(${formationCols}, 1fr)` }}
