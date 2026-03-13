@@ -3,31 +3,22 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { FormationSlot } from "@/components/FormationSlot";
-import { FORMATION_COLS, FORMATION_ROWS, GRID_SIZE } from "@/lib/constants";
+import { GRID_SIZE } from "@/lib/constants";
+import type { FormationPosition } from "@/lib/formation";
 
 const BEATS_TOTAL = GRID_SIZE * GRID_SIZE;
-const MIN_ROWS = 1;
-const MIN_COLS = 1;
-const MAX_ROWS = 20;
-const MAX_COLS = 20;
-
-const defaultSlots = (cols: number, rows: number) =>
-  Array(cols * rows).fill(null) as (string | null)[];
+const CANVAS_HEIGHT = 500;
 
 type UserGrid = {
   user_name: string;
   updated_at?: string;
-  grid: boolean[][];
+  grid: (boolean | number)[][];
   row_notes: string[];
 };
 
 export default function AdminPage() {
   const [users, setUsers] = useState<UserGrid[]>([]);
-  const [formationCols, setFormationCols] = useState(FORMATION_COLS);
-  const [formationRows, setFormationRows] = useState(FORMATION_ROWS);
-  const [formation, setFormation] = useState<(string | null)[]>(
-    defaultSlots(FORMATION_COLS, FORMATION_ROWS),
-  );
+  const [positions, setPositions] = useState<FormationPosition[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -36,7 +27,9 @@ export default function AdminPage() {
   const [editFormation, setEditFormation] = useState(false);
   const [newUserName, setNewUserName] = useState("");
   const [manageUsers, setManageUsers] = useState(false);
+  const [draggingIdx, setDraggingIdx] = useState<number | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
 
   const userMap = Object.fromEntries(users.map((u) => [u.user_name, u]));
 
@@ -60,28 +53,19 @@ export default function AdminPage() {
           );
         return Promise.all([
           gridsRes.json(),
-          formRes.ok ? formRes.json() : Promise.resolve([]),
+          formRes.ok ? formRes.json() : Promise.resolve({ positions: [] }),
         ]);
       })
-      .then(([gridData, data]) => {
+      .then(([gridData, formData]) => {
         setUsers(gridData);
-        const d =
-          data &&
-          typeof data === "object" &&
-          "cols" in data &&
-          "rows" in data &&
-          "slots" in data
-            ? (data as { cols: number; rows: number; slots: (string | null)[] })
-            : {
-                cols: FORMATION_COLS,
-                rows: FORMATION_ROWS,
-                slots: defaultSlots(FORMATION_COLS, FORMATION_ROWS),
-              };
-        setFormationCols(Math.max(MIN_COLS, Math.min(MAX_COLS, d.cols)));
-        setFormationRows(Math.max(MIN_ROWS, Math.min(MAX_ROWS, d.rows)));
-        setFormation(
-          Array.isArray(d.slots) ? d.slots : defaultSlots(d.cols, d.rows),
-        );
+        const p =
+          formData &&
+          typeof formData === "object" &&
+          "positions" in formData &&
+          Array.isArray(formData.positions)
+            ? (formData.positions as FormationPosition[])
+            : [];
+        setPositions(p);
       })
       .catch((e) => setError(e.message));
   }, []);
@@ -102,69 +86,23 @@ export default function AdminPage() {
     };
   }, [playing, bpm, advanceBeat]);
 
-  const formationSize = formationCols * formationRows;
-
-  const saveFormation = (
-    slots: (string | null)[],
-    cols = formationCols,
-    rows = formationRows,
-  ) => {
-    const size = cols * rows;
-    const normalized = Array.from({ length: size }, (_, i) =>
-      typeof slots[i] === "string" && slots[i] ? slots[i] : null,
-    );
-    setFormationCols(cols);
-    setFormationRows(rows);
-    setFormation(normalized);
+  const saveFormation = (newPositions: FormationPosition[]) => {
+    setPositions(newPositions);
     fetch("/api/admin/formation", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cols, rows, slots: normalized }),
+      body: JSON.stringify({ positions: newPositions }),
     });
   };
 
-  const addRow = () => {
-    if (formationRows >= MAX_ROWS) return;
-    const newSlots = [...formation, ...Array(formationCols).fill(null)];
-    saveFormation(newSlots, formationCols, formationRows + 1);
+  const removeFromFormation = (idx: number) => {
+    saveFormation(positions.filter((_, i) => i !== idx));
   };
 
-  const removeRow = () => {
-    if (formationRows <= MIN_ROWS) return;
-    const newSlots = formation.slice(0, -formationCols);
-    saveFormation(newSlots, formationCols, formationRows - 1);
-  };
-
-  const addCol = () => {
-    if (formationCols >= MAX_COLS) return;
-    const newSlots: (string | null)[] = [];
-    for (let r = 0; r < formationRows; r++) {
-      const start = r * formationCols;
-      newSlots.push(...formation.slice(start, start + formationCols), null);
-    }
-    saveFormation(newSlots, formationCols + 1, formationRows);
-  };
-
-  const removeCol = () => {
-    if (formationCols <= MIN_COLS) return;
-    const newSlots: (string | null)[] = [];
-    for (let r = 0; r < formationRows; r++) {
-      const start = r * formationCols;
-      newSlots.push(...formation.slice(start, start + formationCols - 1));
-    }
-    saveFormation(newSlots, formationCols - 1, formationRows);
-  };
-
-  const setSlot = (idx: number, name: string | null) => {
-    const next = [...formation];
-    next[idx] = name;
-    saveFormation(next);
-  };
-
-  const swapSlots = (fromIdx: number, toIdx: number) => {
-    if (fromIdx === toIdx) return;
-    const next = [...formation];
-    [next[fromIdx], next[toIdx]] = [next[toIdx], next[fromIdx]];
+  const updatePosition = (idx: number, x: number, y: number) => {
+    const next = positions.map((p, i) =>
+      i === idx ? { ...p, x: clamp(x), y: clamp(y) } : p,
+    );
     saveFormation(next);
   };
 
@@ -190,6 +128,35 @@ export default function AdminPage() {
     refetch();
   };
 
+  const toggleBeat = useCallback(
+    (userName: string) => {
+      const row = Math.floor(currentBeat / GRID_SIZE);
+      const col = currentBeat % GRID_SIZE;
+      setUsers((prev) =>
+        prev.map((u) => {
+          if (u.user_name !== userName) return u;
+          const newGrid = u.grid.map((r, ri) => {
+            if (ri !== row) return [...r];
+            return r.map((c, ci) => {
+              if (ci !== col) return c;
+              const cur =
+                c === true ? 4 : c === false ? 0 : typeof c === "number" ? c : 0;
+              // Cycle: 0 → 4 → 3 → 2 → 1 → 0
+              return cur === 0 ? 4 : cur - 1;
+            });
+          });
+          fetch(`/api/grids/${encodeURIComponent(userName)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ grid: newGrid, row_notes: u.row_notes }),
+          });
+          return { ...u, grid: newGrid };
+        }),
+      );
+    },
+    [currentBeat],
+  );
+
   const handleDeleteUser = async (userName: string) => {
     if (!confirm(`Delete ${userName}?`)) return;
     const res = await fetch(`/api/grids/${encodeURIComponent(userName)}`, {
@@ -199,8 +166,21 @@ export default function AdminPage() {
       alert("Failed to delete");
       return;
     }
-    saveFormation(formation.map((n) => (n === userName ? null : n)));
+    saveFormation(positions.filter((p) => p.name !== userName));
     refetch();
+  };
+
+  const getCanvasXY = (
+    clientX: number,
+    clientY: number,
+  ): { x: number; y: number } | null => {
+    const el = canvasRef.current;
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    return {
+      x: clamp(((clientX - rect.left) / rect.width) * 100),
+      y: clamp(((clientY - rect.top) / rect.height) * 100),
+    };
   };
 
   if (loading)
@@ -220,7 +200,7 @@ export default function AdminPage() {
     );
   }
 
-  const inFormation = formation.filter((n): n is string => !!n);
+  const inFormation = positions.map((p) => p.name);
   const available = users.filter((u) => !inFormation.includes(u.user_name));
 
   return (
@@ -334,117 +314,119 @@ export default function AdminPage() {
         {editFormation && (
           <div className="mb-6 rounded-xl bg-white p-4 shadow">
             <h2 className="mb-3 text-sm font-semibold text-zinc-700">
-              Arrange formation ({formationCols}×{formationRows} grid) – drag
-              users into positions
+              Drag members to any position on the stage
             </h2>
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <span className="text-xs text-zinc-500">Rows:</span>
-              <button
-                type="button"
-                onClick={addRow}
-                disabled={formationRows >= MAX_ROWS}
-                className="rounded border border-zinc-300 bg-white px-2 py-0.5 text-xs disabled:opacity-40"
-              >
-                + Row
-              </button>
-              <button
-                type="button"
-                onClick={removeRow}
-                disabled={formationRows <= MIN_ROWS}
-                className="rounded border border-zinc-300 bg-white px-2 py-0.5 text-xs disabled:opacity-40"
-              >
-                − Row
-              </button>
-              <span className="ml-2 text-xs text-zinc-500">Cols:</span>
-              <button
-                type="button"
-                onClick={addCol}
-                disabled={formationCols >= MAX_COLS}
-                className="rounded border border-zinc-300 bg-white px-2 py-0.5 text-xs disabled:opacity-40"
-              >
-                + Col
-              </button>
-              <button
-                type="button"
-                onClick={removeCol}
-                disabled={formationCols <= MIN_COLS}
-                className="rounded border border-zinc-300 bg-white px-2 py-0.5 text-xs disabled:opacity-40"
-              >
-                − Col
-              </button>
-            </div>
-
-            <div className="flex flex-wrap gap-6">
+            <div className="flex flex-col lg:flex-row gap-6">
+              {/* Canvas */}
               <div
-                className="grid gap-1.5"
-                style={{
-                  gridTemplateColumns: `repeat(${formationCols}, minmax(80px, 1fr))`,
+                ref={canvasRef}
+                className="relative w-full lg:flex-1 rounded-lg border-2 border-dashed border-zinc-300 bg-zinc-50/50"
+                style={{ minHeight: CANVAS_HEIGHT }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const pos = getCanvasXY(e.clientX, e.clientY);
+                  if (!pos) return;
+                  const name = e.dataTransfer.getData("user");
+                  const fromIdxRaw = e.dataTransfer.getData("formIdx");
+                  if (fromIdxRaw !== "") {
+                    // Moving existing member
+                    const idx = parseInt(fromIdxRaw, 10);
+                    updatePosition(idx, pos.x, pos.y);
+                  } else if (name) {
+                    // Adding new member from available panel
+                    if (positions.some((p) => p.name === name)) return;
+                    saveFormation([...positions, { name, x: pos.x, y: pos.y }]);
+                  }
                 }}
               >
-                {Array.from(
-                  { length: formationCols * formationRows },
-                  (_, idx) => (
+                {/* Grid lines for visual reference */}
+                <div className="pointer-events-none absolute inset-0 opacity-20">
+                  {[25, 50, 75].map((pct) => (
                     <div
-                      key={idx}
-                      className="min-h-[44px] rounded-lg border-2 border-dashed border-zinc-200 bg-zinc-50/50 p-2 transition hover:border-red-300 hover:bg-red-50/30"
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        e.currentTarget.classList.add(
-                          "border-red-400",
-                          "bg-red-50/50",
-                        );
+                      key={`h-${pct}`}
+                      className="absolute left-0 right-0 border-t border-zinc-400"
+                      style={{ top: `${pct}%` }}
+                    />
+                  ))}
+                  {[25, 50, 75].map((pct) => (
+                    <div
+                      key={`v-${pct}`}
+                      className="absolute top-0 bottom-0 border-l border-zinc-400"
+                      style={{ left: `${pct}%` }}
+                    />
+                  ))}
+                </div>
+                <span className="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 text-[10px] uppercase tracking-wider text-zinc-400">
+                  Sân khấu
+                </span>
+
+                {positions.map((p, idx) => (
+                  <div
+                    key={p.name}
+                    draggable
+                    onDragStart={(e) => {
+                      setDraggingIdx(idx);
+                      e.dataTransfer.setData("user", p.name);
+                      e.dataTransfer.setData("formIdx", String(idx));
+                      e.dataTransfer.effectAllowed = "all";
+                    }}
+                    onDragEnd={() => setDraggingIdx(null)}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onDrop={(e) => {
+                      // Let parent canvas handle the drop
+                      e.preventDefault();
+                      const pos = getCanvasXY(e.clientX, e.clientY);
+                      if (!pos) return;
+                      const name = e.dataTransfer.getData("user");
+                      const fromIdxRaw = e.dataTransfer.getData("formIdx");
+                      if (fromIdxRaw !== "") {
+                        const fromIdx = parseInt(fromIdxRaw, 10);
+                        updatePosition(fromIdx, pos.x, pos.y);
+                      } else if (name) {
+                        if (positions.some((pp) => pp.name === name)) return;
+                        saveFormation([...positions, { name, x: pos.x, y: pos.y }]);
+                      }
+                    }}
+                    className={`absolute flex cursor-grab items-center gap-1 rounded-lg border bg-white px-2.5 py-1.5 text-sm font-medium shadow-sm transition-shadow hover:shadow-md active:cursor-grabbing ${
+                      draggingIdx === idx
+                        ? "border-red-400 opacity-50"
+                        : "border-zinc-200"
+                    }`}
+                    style={{
+                      left: `${p.x}%`,
+                      top: `${p.y}%`,
+                      transform: "translate(-50%, -50%)",
+                    }}
+                  >
+                    <span className="text-zinc-800">{p.name}</span>
+                    <button
+                      type="button"
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        removeFromFormation(idx);
                       }}
-                      onDragLeave={(e) => {
-                        e.currentTarget.classList.remove(
-                          "border-red-400",
-                          "bg-red-50/50",
-                        );
-                      }}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        e.currentTarget.classList.remove(
-                          "border-red-400",
-                          "bg-red-50/50",
-                        );
-                        const name = e.dataTransfer.getData("user");
-                        const fromSlotRaw = e.dataTransfer.getData("slot");
-                        if (!name) return;
-                        const fromSlot =
-                          fromSlotRaw !== "" ? parseInt(fromSlotRaw, 10) : -1;
-                        if (fromSlot >= 0) swapSlots(fromSlot, idx);
-                        else setSlot(idx, name);
-                      }}
+                      className="ml-0.5 text-zinc-400 hover:text-red-600"
+                      title="Remove"
                     >
-                      {formation[idx] ? (
-                        <div
-                          draggable
-                          onDragStart={(e) => {
-                            e.dataTransfer.setData("user", formation[idx]!);
-                            e.dataTransfer.setData("slot", String(idx));
-                            e.dataTransfer.effectAllowed = "move";
-                          }}
-                          className="flex cursor-grab items-center justify-between rounded border border-zinc-200 bg-white px-2 py-1 text-sm font-medium text-zinc-800 active:cursor-grabbing"
-                        >
-                          <span className="truncate">{formation[idx]}</span>
-                          <button
-                            type="button"
-                            onClick={(ev) => {
-                              ev.stopPropagation();
-                              setSlot(idx, null);
-                            }}
-                            className="ml-1 text-zinc-400 hover:text-red-600"
-                            title="Remove"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-zinc-400">{idx + 1}</span>
-                      )}
-                    </div>
-                  ),
+                      ×
+                    </button>
+                  </div>
+                ))}
+
+                {positions.length === 0 && (
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-zinc-400">
+                    Drop members here
+                  </div>
                 )}
               </div>
+
+              {/* Available panel */}
               <div className="min-w-[140px]">
                 <p className="mb-2 text-xs font-medium text-zinc-500">
                   Available
@@ -456,15 +438,15 @@ export default function AdminPage() {
                       draggable
                       onDragStart={(e) => {
                         e.dataTransfer.setData("user", u.user_name);
-                        e.dataTransfer.setData("slot", "");
-                        e.dataTransfer.effectAllowed = "copy";
+                        e.dataTransfer.setData("formIdx", "");
+                        e.dataTransfer.effectAllowed = "all";
                       }}
                       className="cursor-grab rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 shadow-sm hover:border-zinc-300 active:cursor-grabbing"
                     >
                       {u.user_name}
                     </div>
                   ))}
-                  {available.length === 0 && inFormation.length > 0 && (
+                  {available.length === 0 && positions.length > 0 && (
                     <span className="text-sm text-zinc-500">
                       All in formation
                     </span>
@@ -474,10 +456,33 @@ export default function AdminPage() {
             </div>
           </div>
         )}
+
         <div className="mb-4 rounded-xl bg-white p-4 shadow">
-          <span className="mb-3 block text-center text-6xl font-bold tabular-nums text-zinc-800">
-            Nhịp {currentBeat + 1} / {BEATS_TOTAL}
-          </span>
+          <div className="mb-3 flex items-center justify-center gap-4">
+            <button
+              onClick={() => {
+                setPlaying(false);
+                setCurrentBeat((b) => Math.max(0, b - 1));
+              }}
+              disabled={currentBeat <= 0}
+              className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-lg font-bold text-zinc-700 hover:bg-zinc-50 disabled:opacity-40"
+            >
+              ‹ Prev
+            </button>
+            <span className="text-4xl md:text-6xl font-bold tabular-nums text-zinc-800">
+              Nhịp {currentBeat + 1} / {BEATS_TOTAL}
+            </span>
+            <button
+              onClick={() => {
+                setPlaying(false);
+                setCurrentBeat((b) => Math.min(BEATS_TOTAL - 1, b + 1));
+              }}
+              disabled={currentBeat >= BEATS_TOTAL - 1}
+              className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-lg font-bold text-zinc-700 hover:bg-zinc-50 disabled:opacity-40"
+            >
+              Next ›
+            </button>
+          </div>
           <input
             type="range"
             min={0}
@@ -490,26 +495,45 @@ export default function AdminPage() {
             className="w-full"
           />
         </div>
+
+        {/* Free-position formation display */}
         <div
-          className="grid gap-3"
-          style={{ gridTemplateColumns: `repeat(${formationCols}, 1fr)` }}
+          className="relative w-full rounded-xl bg-white shadow"
+          style={{ minHeight: CANVAS_HEIGHT }}
         >
-          {formation.some(Boolean) ? (
-            formation.map((userName, i) => (
-              <FormationSlot
-                key={`${i}-${userName ?? "empty"}`}
-                user={userName ? (userMap[userName] ?? null) : null}
-                currentBeat={currentBeat}
-                position={i + 1}
-              />
+          {positions.length > 0 ? (
+            positions.map((p, i) => (
+              <div
+                key={p.name}
+                className="absolute"
+                style={{
+                  left: `${p.x}%`,
+                  top: `${p.y}%`,
+                  transform: "translate(-50%, -50%)",
+                  width: 140,
+                }}
+              >
+                <FormationSlot
+                  user={userMap[p.name] ?? null}
+                  currentBeat={currentBeat}
+                  position={i + 1}
+                  onToggleBeat={() => toggleBeat(p.name)}
+                />
+              </div>
             ))
           ) : (
-            <p className="col-span-full rounded-xl bg-white p-8 text-center text-zinc-500 shadow">
-              Arrange users into formation slots.
-            </p>
+            <div className="flex items-center justify-center" style={{ minHeight: CANVAS_HEIGHT }}>
+              <p className="text-zinc-500">
+                Arrange users into formation slots.
+              </p>
+            </div>
           )}
         </div>
       </div>
     </div>
   );
+}
+
+function clamp(v: number) {
+  return Math.round(Math.max(0, Math.min(100, v)) * 100) / 100;
 }

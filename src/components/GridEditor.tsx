@@ -61,7 +61,7 @@ export function GridEditor({
         <div className="overflow-auto rounded-xl bg-white p-6 shadow-lg">
           <h2 className="mb-4 text-center text-lg font-semibold text-zinc-800">Lịch bung dù của {name}</h2>
           <div
-            className="grid gap-2"
+            className="grid gap-2 min-w-max"
             style={{
               gridTemplateColumns: "28px repeat(8, minmax(36px, 1fr)) minmax(120px, 1fr)",
               gridTemplateRows: "28px repeat(8, minmax(36px, 1fr))",

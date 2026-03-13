@@ -4,14 +4,14 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { FormationSlot } from "@/components/FormationSlot";
 import { GRID_SIZE } from "@/lib/constants";
 import { useRouter } from "next/navigation";
+import type { FormationPosition } from "@/lib/formation";
 
 const BEATS_TOTAL = GRID_SIZE * GRID_SIZE;
+const CANVAS_HEIGHT = 500;
 
 type UserGrid = { user_name: string; grid: boolean[][]; row_notes: string[] };
 type OverviewData = {
-  cols: number;
-  rows: number;
-  slots: (string | null)[];
+  positions: FormationPosition[];
   users: Record<string, { grid: boolean[][]; row_notes: string[] }>;
 };
 
@@ -51,13 +51,12 @@ export default function GridPage() {
         if (
           data &&
           typeof data === "object" &&
-          "cols" in data &&
-          "rows" in data &&
-          "slots" in data
+          "positions" in data &&
+          Array.isArray(data.positions)
         ) {
           setOverview(data as OverviewData);
         } else {
-          setOverview({ cols: 10, rows: 3, slots: [], users: {} });
+          setOverview({ positions: [], users: {} });
         }
       })
       .catch(() => router.replace("/"))
@@ -86,15 +85,10 @@ export default function GridPage() {
       </div>
     );
   if (!currentUser) return null;
-  const { cols, slots, users } = overview ?? {
-    cols: 10,
-    rows: 3,
-    slots: [],
-    users: {},
-  };
+  const { positions, users } = overview ?? { positions: [], users: {} };
   const norm = (x: string | null) => (x ?? "").trim().toLowerCase();
   const isMe = (name: string | null) => norm(name) === norm(currentUser);
-  const mySlotIdx = slots.findIndex((s) => isMe(s));
+  const myPos = positions.find((p) => isMe(p.name));
 
   return (
     <div className="min-h-screen bg-zinc-100 p-6">
@@ -154,7 +148,7 @@ export default function GridPage() {
             className="w-full"
           />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 mb-4">
           <label className="text-sm text-zinc-600">BPM</label>
           <input
             type="range"
@@ -166,37 +160,49 @@ export default function GridPage() {
           />
           <span className="text-sm font-medium text-zinc-700">{bpm}</span>
         </div>
+
+        {/* Free-position formation display */}
         <div
-          className="grid gap-3"
-          style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}
+          className="relative w-full rounded-xl bg-white shadow"
+          style={{ minHeight: CANVAS_HEIGHT }}
         >
-          {slots.map((userName, idx) => {
-            const userKey = userName
-              ? (Object.keys(users).find((k) => norm(k) === norm(userName)) ??
-                userName)
+          {positions.map((p, idx) => {
+            const userKey =
+              Object.keys(users).find((k) => norm(k) === norm(p.name)) ??
+              p.name;
+            const ud = users[userKey];
+            const user: UserGrid | null = ud
+              ? { user_name: p.name, grid: ud.grid, row_notes: ud.row_notes }
               : null;
-            const ud = userKey ? users[userKey] : null;
-            const user: UserGrid | null =
-              ud && userName
-                ? {
-                    user_name: userName,
-                    grid: ud.grid,
-                    row_notes: ud.row_notes,
-                  }
-                : null;
             return (
-              <FormationSlot
-                key={idx}
-                user={user}
-                currentBeat={currentBeat}
-                position={idx + 1}
-                canEdit={isMe(userName)}
-                highlight={isMe(userName)}
-              />
+              <div
+                key={p.name}
+                className="absolute"
+                style={{
+                  left: `${p.x}%`,
+                  top: `${p.y}%`,
+                  transform: "translate(-50%, -50%)",
+                  width: 140,
+                }}
+              >
+                <FormationSlot
+                  user={user}
+                  currentBeat={currentBeat}
+                  position={idx + 1}
+                  canEdit={isMe(p.name)}
+                  highlight={isMe(p.name)}
+                />
+              </div>
             );
           })}
+          {positions.length === 0 && (
+            <div className="flex items-center justify-center" style={{ minHeight: CANVAS_HEIGHT }}>
+              <p className="text-zinc-500">No formation set up yet.</p>
+            </div>
+          )}
         </div>
-        {mySlotIdx < 0 && (
+
+        {!myPos && (
           <p className="mt-6 rounded-xl bg-amber-50 p-4 text-sm text-amber-800">
             You&apos;re not in the formation. Contact the admin to be added.
           </p>

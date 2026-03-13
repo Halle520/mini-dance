@@ -17,13 +17,12 @@ export async function PUT(req: NextRequest) {
   const name = await getSession();
   if (!name) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!isAdmin(name)) return NextResponse.json({ error: "Admin only" }, { status: 403 });
-  const body = (await req.json()) as FormationData;
-  const { cols, rows, slots } = parseFormation(body);
+  const body = await req.json();
+  const parsed = parseFormation(body);
   const supabase = createServerClient();
-  const payload = { cols, rows, slots };
   const { error } = await supabase
     .from("formation")
-    .upsert({ id: 1, positions: payload }, { onConflict: "id" });
+    .upsert({ id: 1, positions: parsed }, { onConflict: "id" });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(payload);
+  return NextResponse.json(parsed);
 }

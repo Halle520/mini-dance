@@ -13,8 +13,8 @@ export async function GET() {
     .eq("id", 1)
     .single();
   if (formErr) return NextResponse.json({ error: formErr.message }, { status: 500 });
-  const { cols, rows, slots } = parseFormation(formData?.positions ?? []);
-  const names = [...new Set(slots.filter((s): s is string => !!s))];
+  const { positions } = parseFormation(formData?.positions ?? []);
+  const names = [...new Set(positions.map((p) => p.name))];
   const users: Record<string, { grid: boolean[][]; row_notes: string[] }> = {};
   if (names.length > 0) {
     const { data: grids } = await supabase
@@ -28,5 +28,5 @@ export async function GET() {
       };
     }
   }
-  return NextResponse.json({ cols, rows, slots, users });
+  return NextResponse.json({ positions, users });
 }
