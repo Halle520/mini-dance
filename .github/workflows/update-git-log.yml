@@ -1,0 +1,45 @@
+name: Update Git Log
+
+on:
+  schedule:
+    # Every Friday at 00:00 UTC
+    - cron: '0 0 * * 5'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-git-log:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate git log
+        run: |
+          echo "# Git Log" > GIT_LOG.md
+          echo "" >> GIT_LOG.md
+          echo "Last updated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> GIT_LOG.md
+          echo "" >> GIT_LOG.md
+          git log --pretty=format:"- **%h** %s (%an, %ad)" --date=short >> GIT_LOG.md
+
+      - name: Rewrite history with git log update
+        env:
+          GIT_AUTHOR_DATE: ""
+          GIT_COMMITTER_DATE: ""
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add GIT_LOG.md
+
+          # Set the commit date to the current Friday
+          FRIDAY_DATE="$(date -u '+%Y-%m-%dT%H:%M:%S+0000')"
+          export GIT_AUTHOR_DATE="$FRIDAY_DATE"
+          export GIT_COMMITTER_DATE="$FRIDAY_DATE"
+
+          # Amend the latest commit to rewrite history instead of adding new commits
+          git commit --amend --no-edit || echo "No changes to commit"
+          git push --force origin main
